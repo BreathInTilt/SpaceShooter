@@ -88,8 +88,30 @@ class Enemy:
     def change_direction(self):
         self.move_direction *= -1  # Смена направления движения
 
+
+class DiagonalEnemy(Enemy):
+    def __init__(self, x, y, img_path):
+        super().__init__(x, y, img_path)
+        self.move_x_direction = random.choice([-1, 1])  # Направление движения по X
+        self.move_y_direction = 1  # Направление движения по Y
+
+    def move(self, velocity):
+        self.rect.x += self.move_x_direction * velocity
+        self.rect.y += self.move_y_direction * velocity
+
+
+
+start_time = pygame.time.get_ticks()
+
+def draw_timer(window, start_time):
+    elapsed_time = (pygame.time.get_ticks() - start_time) // 1000  # Прошедшее время в секундах
+    timer_text = font.render(f"Time: {elapsed_time}", 1, (255, 255, 255))
+    window.blit(timer_text, (WIDTH - 200, 10))  # Отображаем время в правом верхнем углу
+
+
+
 # Функция отрисовки окна
-def draw_window(ship_rect, bullets, enemies, enemy_bullets, health, score):
+def draw_window(ship_rect, bullets, enemies, enemy_bullets, health, score, start_time):
     WIN.fill(BLACK)
     WIN.blit(SHIP, (ship_rect.x, ship_rect.y))
     for bullet in bullets:
@@ -100,25 +122,26 @@ def draw_window(ship_rect, bullets, enemies, enemy_bullets, health, score):
         bullet.draw(WIN)
     health_text = font.render(f"Health: {health}", 1, (255, 255, 255))
     score_text = font.render(f"Score: {score}", 1, (255, 255, 255))
+    draw_timer(WIN, start_time)
     WIN.blit(score_text, (WIDTH - 100, 10))
     WIN.blit(health_text, (10, 10))
     pygame.display.update()
 
 
 # Функция обработки движения корабля и стрельбы
-def handle_keys(ship_rect, bullets, last_bullet_time):
+def handle_keys(ship_rect, bullets, last_bullet_time, ship_speed):
     keys = pygame.key.get_pressed()
     current_time = pygame.time.get_ticks()
 
     # Обработка движения корабля
-    if keys[pygame.K_LEFT] and ship_rect.x - 5 > 0:
-        ship_rect.x -= 5
-    if keys[pygame.K_RIGHT] and ship_rect.x + 5 + ship_rect.width < WIDTH:
-        ship_rect.x += 5
-    if keys[pygame.K_UP] and ship_rect.y - 5 > 0:
-        ship_rect.y -= 5
-    if keys[pygame.K_DOWN] and ship_rect.y + 5 + ship_rect.height < HEIGHT:
-        ship_rect.y += 5
+    if keys[pygame.K_LEFT] and ship_rect.x - ship_speed > 0:
+        ship_rect.x -= ship_speed
+    if keys[pygame.K_RIGHT] and ship_rect.x + ship_speed + ship_rect.width < WIDTH:
+        ship_rect.x += ship_speed
+    if keys[pygame.K_UP] and ship_rect.y - ship_speed > 0:
+        ship_rect.y -= ship_speed
+    if keys[pygame.K_DOWN] and ship_rect.y + ship_speed + ship_rect.height < HEIGHT:
+        ship_rect.y += ship_speed
 
     # Обработка стрельбы
     if keys[pygame.K_x] and current_time - last_bullet_time > 250:  # Задержка стрельбы
@@ -126,6 +149,8 @@ def handle_keys(ship_rect, bullets, last_bullet_time):
         last_bullet_time = current_time
 
     return last_bullet_time
+
+
 
 
 def main():
@@ -137,21 +162,27 @@ def main():
     enemy_bullets = []
     last_bullet_time = 0
     enemy_spawn_time = 0
-    health = 5
-    score = 0
+    last_diagonal_enemy_spawn_time = 0
+
     enemy_shoot_probability = 1  # Начальная вероятность выстрела (1%)
     enemy_spawn_interval = 1000  # Интервал спавна врагов в миллисекундах (1 секунда)
     enemy_speed = 3
     last_difficulty_increase_time = pygame.time.get_ticks()
+
+    ship_speed = 5
+    bullet_speed = ship_speed + 2
+    max_health = 5
+    health = max_health
+    score = 0
 
     while run:
         current_time = pygame.time.get_ticks()
         clock.tick(60)
 
         if current_time - last_difficulty_increase_time > 30000:
-            enemy_shoot_probability += 1  # Увеличиваем вероятность выстрела
-            enemy_spawn_interval = max(500,
-                                       enemy_spawn_interval - 100)  # Уменьшаем интервал спавна, но не меньше 0.5 секунды
+            if enemy_shoot_probability <= 20:
+                enemy_shoot_probability += 1  # Увеличиваем вероятность выстрела
+            enemy_spawn_interval = max(500, enemy_spawn_interval - 100)  # Уменьшаем интервал спавна, но не меньше 0.5 секунды
             enemy_speed += 1  # Увеличиваем скорость врагов
             last_difficulty_increase_time = current_time
 
@@ -163,11 +194,34 @@ def main():
                     run = False
 
         # Обработка нажатий клавиш
-        last_bullet_time = handle_keys(ship_rect, bullets, last_bullet_time)
+        last_bullet_time = handle_keys(ship_rect, bullets, last_bullet_time, ship_speed)
+
+        if score // 25 > (ship_speed - 5):  # Повышение скорости корабля и пуль
+            ship_speed += 1
+            bullet_speed = ship_speed + 2
+
+        if score // 50 > (max_health - 5) // 5:  # Увеличение здоровья и максимального здоровья
+            max_health += 5
+            health = max_health
+
+
+        if current_time - last_diagonal_enemy_spawn_time > 2000:
+            initial_x = random.randrange(50, WIDTH - 50)
+            move_x_direction = random.choice([-1, 1])  # Общее направление для всех врагов
+
+            for i in range(4):  # Спавним 4 врагов
+                x = initial_x + 30 * i * move_x_direction  # Небольшая погрешность в позиции
+                y = -50 - 30 * i  # Небольшая погрешность в позиции
+                new_enemy = DiagonalEnemy(x, y, 'gamefiles/enemy2.png')
+                new_enemy.move_x_direction = move_x_direction  # Устанавливаем направление движения
+                enemies.append(new_enemy)
+
+            last_diagonal_enemy_spawn_time = current_time
+
 
         # Обработка пуль
         for bullet in bullets[:]:
-            bullet.move(5)
+            bullet.move(bullet_speed)
             if bullet.off_screen():
                 bullets.remove(bullet)
             else:
@@ -215,10 +269,11 @@ def main():
                 enemy_bullets.remove(bullet)
 
             if health <= 0:
-                print("Game Over")  # или другая логика завершения игры
+                print("Game Over")
+                print((pygame.time.get_ticks() - start_time) // 1000)
                 run = False
 
-        draw_window(ship_rect, bullets, enemies, enemy_bullets, health, score)
+        draw_window(ship_rect, bullets, enemies, enemy_bullets, health, score, start_time)
 
     pygame.quit()
 
