@@ -2,7 +2,6 @@ import pygame
 import os
 import random
 
-
 # Инициализация Pygame
 pygame.init()
 
@@ -24,10 +23,14 @@ SHIP = pygame.transform.scale(SHIP_IMAGE, (100, 80))
 font = pygame.font.SysFont("arial", 20)
 
 
-
 def collide(obj1, bullet):
     bullet_rect = pygame.Rect(bullet.x, bullet.y, bullet.width, bullet.height)
     return obj1.colliderect(bullet_rect)
+
+
+def collide2(obj1, obj2):
+    return obj1.rect.colliderect(obj2.rect)
+
 
 # Класс для пули
 class Bullet:
@@ -89,6 +92,35 @@ class Enemy:
         self.move_direction *= -1  # Смена направления движения
 
 
+class Meteorite:
+    def __init__(self, x, y, img_path, direction):
+        self.img = pygame.image.load(img_path)
+        self.img = pygame.transform.scale(self.img, (50, 50))  # Размер метеорита
+        self.rect = self.img.get_rect(topleft=(x, y))
+        self.direction = direction
+        self.velocity = 9  # Скорость метеорита
+
+    def draw(self, window):
+        window.blit(self.img, self.rect)
+
+    def move(self):
+        # if self.direction == "right":
+        #    self.rect.x += self.velocity
+        # elif self.direction == "left":
+        #    self.rect.x -= self.velocity
+        if self.direction == "down":
+            self.rect.y += self.velocity
+        elif self.direction == "right_down":
+            self.rect.x += self.velocity
+            self.rect.y += self.velocity
+        elif self.direction == "left_down":
+            self.rect.x -= self.velocity
+            self.rect.y += self.velocity
+
+    def off_screen(self):
+        return not (self.rect.x < WIDTH and self.rect.x > 0 and self.rect.y < HEIGHT)
+
+
 class DiagonalEnemy(Enemy):
     def __init__(self, x, y, img_path):
         super().__init__(x, y, img_path)
@@ -100,8 +132,30 @@ class DiagonalEnemy(Enemy):
         self.rect.y += self.move_y_direction * velocity
 
 
+class PowerUp:
+    def __init__(self, x, y, img_path):
+        self.img = pygame.image.load(img_path)
+        self.img = pygame.transform.scale(self.img, (80, 80))  # Размер PowerUp
+        self.rect = self.img.get_rect(topleft=(x, y))
+        self.velocity = 3  # Скорость движения вниз
+
+    def draw(self, window):
+        window.blit(self.img, self.rect)
+
+    def move(self):
+        self.rect.y += self.velocity
+
+    def off_screen(self):
+        return self.rect.y > HEIGHT
+
+
+class ShieldPowerUp(PowerUp):
+    def __init__(self, x, y, img_path):
+        super().__init__(x, y, img_path)
+
 
 start_time = pygame.time.get_ticks()
+
 
 def draw_timer(window, start_time):
     elapsed_time = (pygame.time.get_ticks() - start_time) // 1000  # Прошедшее время в секундах
@@ -109,17 +163,20 @@ def draw_timer(window, start_time):
     window.blit(timer_text, (WIDTH - 200, 10))  # Отображаем время в правом верхнем углу
 
 
-
 # Функция отрисовки окна
-def draw_window(ship_rect, bullets, enemies, enemy_bullets, health, score, start_time):
+def draw_window(ship_rect, bullets, enemies, enemy_bullets, health, score, start_time, meteorites, power_ups):
     WIN.fill(BLACK)
     WIN.blit(SHIP, (ship_rect.x, ship_rect.y))
     for bullet in bullets:
         bullet.draw(WIN)
+    for meteor in meteorites:
+        meteor.draw(WIN)
     for enemy in enemies:
         enemy.draw(WIN)
     for bullet in enemy_bullets:
         bullet.draw(WIN)
+    for power_up in power_ups:
+        power_up.draw(WIN)
     health_text = font.render(f"Health: {health}", 1, (255, 255, 255))
     score_text = font.render(f"Score: {score}", 1, (255, 255, 255))
     draw_timer(WIN, start_time)
@@ -151,8 +208,6 @@ def handle_keys(ship_rect, bullets, last_bullet_time, ship_speed):
     return last_bullet_time
 
 
-
-
 def main():
     run = True
     clock = pygame.time.Clock()
@@ -160,6 +215,8 @@ def main():
     bullets = []
     enemies = []
     enemy_bullets = []
+    meteorites = []
+    power_ups = []
     last_bullet_time = 0
     enemy_spawn_time = 0
     last_diagonal_enemy_spawn_time = 0
@@ -168,6 +225,10 @@ def main():
     enemy_spawn_interval = 1000  # Интервал спавна врагов в миллисекундах (1 секунда)
     enemy_speed = 3
     last_difficulty_increase_time = pygame.time.get_ticks()
+
+    shield_active = False
+    shield_start_time = 0
+    shield_duration = 5000
 
     ship_speed = 5
     bullet_speed = ship_speed + 2
@@ -182,9 +243,18 @@ def main():
         if current_time - last_difficulty_increase_time > 30000:
             if enemy_shoot_probability <= 20:
                 enemy_shoot_probability += 1  # Увеличиваем вероятность выстрела
-            enemy_spawn_interval = max(500, enemy_spawn_interval - 100)  # Уменьшаем интервал спавна, но не меньше 0.5 секунды
+            enemy_spawn_interval = max(500,
+                                       enemy_spawn_interval - 100)  # Уменьшаем интервал спавна, но не меньше 0.5 секунды
             enemy_speed += 1  # Увеличиваем скорость врагов
             last_difficulty_increase_time = current_time
+
+        directions = ["down", "right_down", "left_down"]
+        #
+        if random.randrange(0, 1000) < 1:  # 5% шанс спавна метеорита в каждом кадре
+            x = random.randrange(0, WIDTH - 10)
+            y = random.randrange(-30, 10)
+            direction = random.choice(directions)
+            meteorites.append(Meteorite(x, y, 'gamefiles/meteorit.png', direction))
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -204,7 +274,6 @@ def main():
             max_health += 5
             health = max_health
 
-
         if current_time - last_diagonal_enemy_spawn_time > 2000:
             initial_x = random.randrange(50, WIDTH - 50)
             move_x_direction = random.choice([-1, 1])  # Общее направление для всех врагов
@@ -217,6 +286,29 @@ def main():
                 enemies.append(new_enemy)
 
             last_diagonal_enemy_spawn_time = current_time
+
+        if random.randrange(0, 10000) < 1:
+            x = random.randrange(0, WIDTH - 10)
+            y = random.randrange(-30, 1)
+            if random.choice([0, 1]) == 1:
+                power_ups.append(PowerUp(x, y, 'gamefiles/star.png'))
+            else:
+                power_ups.append(ShieldPowerUp(x, y, 'gamefiles/shield.png'))
+
+        for power_up in power_ups[:]:
+            power_up.move()
+            if collide(ship_rect, power_up.rect):
+                if isinstance(power_up, ShieldPowerUp):
+                    shield_active = True
+                    shield_start_time = pygame.time.get_ticks()
+                    power_ups.remove(power_up)
+                else:
+                    power_ups.remove(power_up)
+                    score += 15
+
+
+        if shield_active and (pygame.time.get_ticks() - shield_start_time > shield_duration):
+            shield_active = False
 
 
         # Обработка пуль
@@ -232,8 +324,21 @@ def main():
                         score += 1  # Увеличиваем счёт
                         break
 
+        for meteorite in meteorites[:]:
+            meteorite.move()
+            if collide(ship_rect, meteorite.rect):
+                if not shield_active:
+                    health -= 1
+                meteorites.remove(meteorite)
 
+            for enemy in enemies[:]:
+                if collide(enemy.rect, meteorite.rect):  # Столкновение с врагом
+                    enemies.remove(enemy)
+                    meteorites.remove(meteorite)
+                    score += 1
 
+            if meteorite.off_screen():
+                meteorites.remove(meteorite)
 
         # Спавн врагов
         if current_time - enemy_spawn_time > enemy_spawn_interval:
@@ -244,6 +349,10 @@ def main():
             enemy_spawn_time = pygame.time.get_ticks()
 
         for enemy in enemies:
+            if collide(ship_rect, enemy.rect):  # Столкновение с врагом
+                if not shield_active:
+                    health -= 1  # Уменьшаем здоровье игрока
+                enemies.remove(enemy)  # Удаляем врага
             if random.randrange(0, 100) < enemy_shoot_probability:  # 1% шанс на выстрел за кадр для каждого врага
                 enemy_bullet = enemy.shoot()
                 enemy_bullets.append(enemy_bullet)
@@ -253,29 +362,33 @@ def main():
             if enemy.off_screen():
                 enemies.remove(enemy)
 
+
         # Обработка врагов
-        #for enemy in enemies[:]:
+        # for enemy in enemies[:]:
         #    enemy.move(3)
         #    if enemy.off_screen():
         #        enemies.remove(enemy)
 
         for bullet in enemy_bullets[:]:
-            bullet.move(enemy_speed+3)
+            bullet.move(enemy_speed + 3)
             if bullet.off_screen():
                 enemy_bullets.remove(bullet)
 
             if collide(ship_rect, bullet):
-                health -= 1  # Уменьшаем здоровье при попадании
+                if not shield_active:
+                    health -= 1  # Уменьшаем здоровье при попадании
                 enemy_bullets.remove(bullet)
 
             if health <= 0:
                 print("Game Over")
-                print((pygame.time.get_ticks() - start_time) // 1000)
+                print('Time: ', (pygame.time.get_ticks() - start_time) // 1000)
+                print('Score: ', score)
                 run = False
 
-        draw_window(ship_rect, bullets, enemies, enemy_bullets, health, score, start_time)
+        draw_window(ship_rect, bullets, enemies, enemy_bullets, health, score, start_time, meteorites, power_ups)
 
     pygame.quit()
+
 
 if __name__ == '__main__':
     main()
